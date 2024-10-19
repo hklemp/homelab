@@ -15,7 +15,6 @@ services:
       - ./conf/homarr/configs:/app/data/configs
       - ./data/homarr/icons:/app/public/icons
       - ./data/homarr/data:/data
-
   homeassistant:
     image: lscr.io/linuxserver/homeassistant:latest
     environment:
@@ -29,17 +28,41 @@ services:
     devices:
       - /dev/ttyUSB0:/dev/ttyUSB0
     restart: unless-stopped
-  paperless-ngx:
-    image: lscr.io/linuxserver/paperless-ngx:latest
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=America/New_York
-      - REDIS_URL= #optional
-    volumes:
-      - ./conf/paperless-ngx:/config
-      - ./data/paperless-ngx:/data
+  broker:
+    image: docker.io/library/redis:7
     restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+  db:
+    image: docker.io/library/mariadb:11
+    restart: unless-stopped
+    volumes:
+      - ./data/mariadb:/var/lib/mysql
+    environment:
+      MARIADB_DATABASE: paperless
+      MARIADB_USER: ${PAPERLESS_DBUSER}
+      MARIADB_PASSWORD: ${PAPERLESS_DBPASS}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+      - broker
+    volumes:
+      - ./data/paperless-ngx/paperlessdata:/usr/src/paperless/data
+      - ./data/paperless-ngx/paperlessmedia:/usr/src/paperless/media
+      - ./data/paperless-ngx/export:/usr/src/paperless/export
+      - ./data/paperless-ngx/consume:/usr/src/paperless/consume
+    env_file: paperless.env
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_DBENGINE: mariadb
+      PAPERLESS_DBHOST: db
+      PAPERLESS_DBUSER: ${PAPERLESS_DBUSER} # only needed if non-default username
+      PAPERLESS_DBPASS: ${PAPERLESS_DBPASS} # only needed if non-default password
+      PAPERLESS_DBPORT: 3306
   pihole:
     image: pihole/pihole:latest
     # For DHCP it is recommended to remove these ports and instead add: network_mode: "host"
@@ -58,8 +81,8 @@ services:
     cap_add:
       - NET_ADMIN # Required if you are using Pi-hole as your DHCP server, else not needed
     restart: unless-stopped
-  watchtower:
-    image: containrrr/watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless-stopped
+volumes:
+  data:
+  media:
+  dbdata:
+  redisdata:
